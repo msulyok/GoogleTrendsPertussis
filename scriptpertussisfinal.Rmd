@@ -1,0 +1,110 @@
+---
+title: "Pertussis Forecasting with splines and manually set differentation "
+author: "Sulyok et al."
+date: '2019 nov 28 '
+output: word_document
+---
+
+```{r echo=TRUE, warnings=TRUE}
+library(readr)
+library( lattice )
+library(splines)
+library(forecast)
+
+
+masterall <- read_delim("pertussismeaslesmaster.csv", ";", escape_double = FALSE, col_types = cols(time = col_date(format = "%Y.%m.%d")), trim_ws = TRUE)
+View(masterall)
+
+masterall[is.na(masterall$rkip)] <- 0 
+summary(masterall)
+cor.test(masterall$rkip, masterall$pertugt, method="kendall")
+library(forecast)
+gts <- ts( masterall$pertugt, start=c(2014, 15), end=c(2019, 12), frequency=52)
+
+
+rkts <- ts( masterall$rkip , start=c(2014, 15), end=c(2019, 12), frequency=52)
+plot(decompose(rkts))
+plot(decompose(gts))
+summary(gts)
+summary(rkts)
+gts17<-ts(gts[208:258], start=c(2018, 13), end=c(2019, 12), frequency=52)
+gts<-ts(gts[1:207], start=c(2014, 15), end=c(2018, 13), frequency=52)
+
+rkts17<-ts(rkts[208:258], start=c(2018, 13), end=c(2019, 12), frequency=52)
+rkts<-ts(rkts[1:207], start=c(2014, 15), end=c(2018, 13), frequency=52)
+
+summary(rkts)
+summary(rkts17)
+summary(gts)
+summary(gts17)
+
+library(ggplot2)
+
+ggplot(data = masterall, aes(x = time)) +
+  geom_point(aes(y = rkip, colour = "RKI")) +
+  stat_smooth(aes(y = rkip, colour = "RKI"),  span=0.5) +
+  geom_point(aes(y = pertugt, colour = "GTD")) +
+    stat_smooth(aes(y = pertugt, colour = "GTD"), span=0.5) +
+  scale_colour_manual("", 
+                      breaks = c("RKI", "GTD"),
+                      values = c("red", "blue")) +
+  scale_x_date(date_minor_breaks = "1 month") +
+  scale_y_log10() +
+  xlab(NULL) +
+  ylab("Weekly case number/Google search volume") +
+  theme_bw()
+acf( rkts, lag.max = 52 )
+acf( diff( rkts ), lag.max = 100 )
+acf( diff( rkts, 52 ), lag.max = 100 )
+acf( diff( diff( rkts, 52 ) ), lag.max = 100 )
+nsdiffs(rkts)
+nsdiffs(residuals(rkts~bs( gts, knots = c( 9, 14 ), Boundary.knots = c( 0, 100 ) ) ))
+#GTD with splines
+xreg<-bs( gts, knots = quantile(gts,(1:2)/3), Boundary.knots = c( 0, 100 ) )
+nxreg<-bs( gts17, knots = quantile(gts,(1:2)/3), Boundary.knots = c( 0, 100 ) )
+
+
+fit <- auto.arima( rkts, trace = TRUE, approximation = FALSE )
+fit
+fc <- forecast( fit, h = length( gts17 ) )
+
+fitGT <- auto.arima( rkts, trace = TRUE, approximation = FALSE, D = 1,
+                     xreg = xreg )
+
+fitGT
+
+fcGT<- forecast( fitGT, xreg = nxreg )
+
+##plot- the models
+
+plot( fc )
+plot( fcGT )
+layout(1)
+plot( fc, col = "black", ylab = "Number of cases", main = "Predictions" )
+lines( fcGT$mean, col = "red" )
+lines( rkts17, col = "black" )
+legend( "topleft", legend = c( "Optimal SARIMA", "Optimal SARIMA with GT", "Actual" ),
+        fill = c( "blue", "red", "black" ), cex = 0.7 )
+
+
+# result:
+accuracy( fc, rkts17 )
+accuracy( fcGT, rkts17 )
+##residuals
+checkresiduals(fit)
+checkresiduals(fitGT)
+
+fitGT 
+a<-AIC( fit, fitGT ) 
+a
+dm.test( rkts17-fc$mean, rkts17-fcGT$mean ) 
+
+
+sessionInfo()
+
+
+
+
+
+
+```
